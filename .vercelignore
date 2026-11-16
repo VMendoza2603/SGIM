@@ -1,0 +1,10 @@
+# No se sube a Vercel: dependencias (Vercel las instala), compilados locales, fotos locales, secretos y material de la tesis
+**/node_modules
+backend/dist
+frontend/dist
+backend/uploads
+**/.env
+**/.env.*
+tesis-fases
+docs
+.claude

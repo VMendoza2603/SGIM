@@ -1,0 +1,22 @@
+# Dependencias y compilados (se regeneran con npm install / npm run build)
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Secretos: NUNCA subir los .env (usar los .env.example como guía)
+.env
+.env.*
+!.env.example
+
+# Contexto privado para Claude (se pasa por otro medio, no va a GitHub)
+CLAUDE.md
+.claude/
+
+# Fotos subidas en local
+backend/uploads/
+
+# Vercel y varios
+.vercel/
+*.log
+.DS_Store
+Thumbs.db

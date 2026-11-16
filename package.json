@@ -1,0 +1,10 @@
+{
+  "name": "sgim",
+  "private": true,
+  "type": "module",
+  "description": "SGIM · despliegue en Vercel: el frontend (frontend/) como sitio estático y el backend (backend/) como función en api/index.js",
+  "scripts": {
+    "dev": "node iniciar.mjs",
+    "dev:sin-tunel": "node iniciar.mjs --sin-tunel"
+  }
+}
