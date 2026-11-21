@@ -12,9 +12,11 @@
     "db:reiniciar": "tsx src/scripts/reiniciar-demo.ts",
     "db:migrar": "tsx src/scripts/migrar.ts",
     "tunel": "tsx src/scripts/tunel.ts",
+    "correo:probar": "tsx src/scripts/probar-correo.ts",
     "ia:probar": "tsx src/scripts/probar-ia.ts",
     "db:instalar": "tsx src/scripts/instalar.ts",
-    "webhook:produccion": "tsx src/scripts/webhook-produccion.ts"
+    "webhook:produccion": "tsx src/scripts/webhook-produccion.ts",
+    "whatsapp:estado": "tsx src/scripts/whatsapp-estado.ts"
   },
   "dependencies": {
     "@vercel/blob": "2.8.1",
@@ -24,6 +26,7 @@
     "dotenv": "16.4.7",
     "express": "4.21.2",
     "jsonwebtoken": "9.0.2",
+    "nodemailer": "6.9.16",
     "pg": "8.13.1",
     "zod": "3.24.1"
   },
@@ -33,6 +36,7 @@
     "@types/express": "4.17.21",
     "@types/jsonwebtoken": "9.0.7",
     "@types/node": "22.10.5",
+    "@types/nodemailer": "6.4.17",
     "@types/pg": "8.11.10",
     "tsx": "4.19.2",
     "typescript": "5.7.3"

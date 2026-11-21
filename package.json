@@ -5,6 +5,8 @@
   "description": "SGIM · despliegue en Vercel: el frontend (frontend/) como sitio estático y el backend (backend/) como función en api/index.js",
   "scripts": {
     "dev": "node iniciar.mjs",
-    "dev:sin-tunel": "node iniciar.mjs --sin-tunel"
+    "dev:sin-tunel": "node iniciar.mjs --sin-tunel",
+    "whatsapp:estado": "npm run whatsapp:estado --prefix backend",
+    "webhook:produccion": "npm run webhook:produccion --prefix backend --"
   }
 }

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requierePermiso } from '../auth.js';
-import { query, queryOne, transaccion } from '../db.js';
+import { query, queryOne, transaccion, escaparLike } from '../db.js';
 import { HttpError, noEncontrado, prohibido, ruta } from '../errores.js';
 import { telefonoSchema } from '../servicios/telefono.js';
 import { auditar, contrasenaTemporal } from '../servicios/auditoria.js';
@@ -191,7 +191,7 @@ personalRouter.get(
           AND ($3 = 'todos' OR u.activo = ($3 = 'activos'))
           AND ($4::text IS NULL OR u.nombres || ' ' || u.apellidos ILIKE '%' || $4 || '%' OR u.correo ILIKE '%' || $4 || '%' OR u.telefono_wa ILIKE '%' || $4 || '%')
         ORDER BY r.id_rol, u.nombres`,
-      [f.rol || null, f.tipo || null, f.estado, f.q || null],
+      [f.rol || null, f.tipo || null, f.estado, f.q ? escaparLike(f.q.trim()) : null],
     );
     res.json(usuarios);
   }),

@@ -51,19 +51,66 @@ export function Foto({ url, texto }: { url?: string | null; texto: ReactNode }) 
   );
 }
 
+const ENFOCABLES = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Ventana modal accesible: Escape cierra, el foco entra al diálogo al abrirse, Tab no se sale de él
+ * y al cerrarse el foco vuelve al botón que lo abrió (navegación solo con teclado o lector de pantalla).
+ */
 export function Dialogo({ titulo, children, onCerrar }: { titulo: string; children: ReactNode; onCerrar: () => void }) {
+  const caja = useRef<HTMLDivElement>(null);
+  const cerrar = useRef(onCerrar);
+  cerrar.current = onCerrar;
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCerrar();
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onCerrar]);
+    const previo = document.activeElement as HTMLElement | null;
+    const primero = caja.current?.querySelector<HTMLElement>(ENFOCABLES);
+    if (!caja.current?.contains(document.activeElement)) (primero ?? caja.current)?.focus();
+    const teclas = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return cerrar.current();
+      if (e.key !== 'Tab' || !caja.current) return;
+      const lista = [...caja.current.querySelectorAll<HTMLElement>(ENFOCABLES)];
+      if (!lista.length) return;
+      const [a, z] = [lista[0], lista[lista.length - 1]];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    };
+    window.addEventListener('keydown', teclas);
+    return () => {
+      window.removeEventListener('keydown', teclas);
+      previo?.focus?.();
+    };
+  }, []);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onCerrar()}>
-      <div className="dialog" role="dialog" aria-label={titulo}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-label={titulo} ref={caja} tabIndex={-1}>
         <h3>{titulo}</h3>
         {children}
       </div>
     </div>
+  );
+}
+
+/** Campo de contraseña con el botón 👁 para mostrar u ocultar lo escrito (mismo estilo que el inicio de sesión). */
+export function InputContrasena({ id, value, onChange, autoComplete = 'new-password', required }: { id: string; value: string; onChange: (v: string) => void; autoComplete?: string; required?: boolean }) {
+  const [ver, setVer] = useState(false);
+  return (
+    <div className="input-wrap">
+      <input id={id} className="input" type={ver ? 'text' : 'password'} autoComplete={autoComplete} required={required} value={value} onChange={(e) => onChange(e.target.value)} />
+      <button type="button" onClick={() => setVer(!ver)} aria-label={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={ver} title={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+        <IconoOjo tachado={ver} />
+      </button>
+    </div>
+  );
+}
+
+/** Ojo abierto = la contraseña está oculta (pulsa para verla); ojo tachado = se está viendo (pulsa para ocultarla). */
+function IconoOjo({ tachado }: { tachado: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {tachado && <line x1="3" y1="3" x2="21" y2="21" />}
+    </svg>
   );
 }
 
@@ -77,13 +124,24 @@ export function useCarga<T = any>(ruta: string | null) {
   const [datos, setDatos] = useState<T | null>(null);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
+  // Última ruta que cargó bien: si un refresco automático de esa misma ruta falla (red inestable, servidor reiniciándose),
+  // se conservan los datos en pantalla en lugar de reemplazarlos por el error.
+  const cargada = useRef<string | null>(null);
   useEffect(() => {
     if (!ruta) return;
     let vigente = true;
-    setError('');
     api<T>(ruta)
-      .then((d) => vigente && setDatos(d))
-      .catch((e) => vigente && setError(e.message));
+      .then((d) => {
+        if (!vigente) return;
+        cargada.current = ruta;
+        setError('');
+        setDatos(d);
+      })
+      .catch((e) => {
+        if (!vigente) return;
+        if (cargada.current === ruta && (e.status === 0 || e.status >= 500)) return;
+        setError(e.message);
+      });
     return () => {
       vigente = false;
     };
@@ -393,9 +451,26 @@ export function Telefono({ id, value, onChange, required }: { id: string; value:
   );
 }
 
-// ---------------------------------------------------------------- Tema y tamaño de letra
+// ---------------------------------------------------------------- Tema y accesibilidad
 export type Tema = 'claro' | 'oscuro';
-export type TamanoTexto = 'normal' | 'grande' | 'muy-grande';
+/** Tamaños del panel de accesibilidad: A- · A · A+ · A++ · A+++ (el factor de cada uno está en styles.css). */
+export type TamanoTexto = 'chico' | 'normal' | 'grande' | 'muy-grande' | 'enorme';
+export const TAMANOS: { id: TamanoTexto; texto: string; nombre: string }[] = [
+  { id: 'chico', texto: 'A-', nombre: 'pequeño' },
+  { id: 'normal', texto: 'A', nombre: 'normal' },
+  { id: 'grande', texto: 'A+', nombre: 'grande' },
+  { id: 'muy-grande', texto: 'A++', nombre: 'muy grande' },
+  { id: 'enorme', texto: 'A+++', nombre: 'el más grande' },
+];
+/** Opciones de sí/no del panel de accesibilidad. Cada una se guarda en el navegador y se refleja como data-* en <html>. */
+export const OPCIONES_A11Y = [
+  { id: 'ajustar', titulo: 'Ajustar al tamaño de la pantalla', ayuda: 'En monitores grandes agranda toda la interfaz.' },
+  { id: 'voz', titulo: 'Lectura en voz alta', ayuda: 'Muestra una barra para escuchar la página o el texto seleccionado.' },
+  { id: 'contraste', titulo: 'Alto contraste', ayuda: '' },
+  { id: 'subrayar', titulo: 'Subrayar enlaces', ayuda: '' },
+  { id: 'espaciado', titulo: 'Aumentar espaciado del texto', ayuda: '' },
+] as const;
+export type OpcionA11y = (typeof OPCIONES_A11Y)[number]['id'];
 const leer = (clave: string) => {
   try {
     return localStorage.getItem(clave);
@@ -411,29 +486,103 @@ const guardar = (clave: string, valor: string) => {
   }
 };
 
-/** Aplica al documento el tema y el tamaño guardados (o el modo del sistema operativo la primera vez). */
+const raiz = () => document.documentElement;
+const ponerOpcion = (id: OpcionA11y, activa: boolean) => {
+  if (activa) raiz().dataset[id] = 'si';
+  else delete raiz().dataset[id];
+};
+
+/** Aplica al documento el tema y las opciones de accesibilidad guardadas (o el modo del sistema operativo la primera vez). */
 export function aplicarPreferencias() {
   const sistema: Tema = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro';
-  document.documentElement.dataset.tema = (leer('sgim.tema') as Tema) ?? sistema;
-  document.documentElement.dataset.texto = (leer('sgim.texto') as TamanoTexto) ?? 'normal';
+  raiz().dataset.tema = (leer('sgim.tema') as Tema) ?? sistema;
+  const texto = leer('sgim.texto') as TamanoTexto | null;
+  raiz().dataset.texto = texto && TAMANOS.some((t) => t.id === texto) ? texto : 'normal';
+  for (const o of OPCIONES_A11Y) ponerOpcion(o.id, leer(`sgim.a11y.${o.id}`) === 'si');
 }
 
-/** Modo claro/oscuro y tamaño de letra; cada navegador recuerda su elección. */
+/** Modo claro/oscuro y opciones de accesibilidad; cada navegador recuerda su elección. */
 export function usePreferencias() {
-  const [tema, setTema] = useState<Tema>(() => (document.documentElement.dataset.tema as Tema) || 'claro');
-  const [texto, setTexto] = useState<TamanoTexto>(() => (document.documentElement.dataset.texto as TamanoTexto) || 'normal');
+  const [tema, setTema] = useState<Tema>(() => (raiz().dataset.tema as Tema) || 'claro');
+  const [texto, setTexto] = useState<TamanoTexto>(() => (raiz().dataset.texto as TamanoTexto) || 'normal');
+  const [opciones, setOpciones] = useState<Record<OpcionA11y, boolean>>(
+    () => Object.fromEntries(OPCIONES_A11Y.map((o) => [o.id, raiz().dataset[o.id] === 'si'])) as Record<OpcionA11y, boolean>,
+  );
   const cambiarTema = () => {
     const t: Tema = tema === 'oscuro' ? 'claro' : 'oscuro';
-    document.documentElement.dataset.tema = t;
+    raiz().dataset.tema = t;
     guardar('sgim.tema', t);
     setTema(t);
   };
-  const cambiarTexto = () => {
-    const orden: TamanoTexto[] = ['normal', 'grande', 'muy-grande'];
-    const t = orden[(orden.indexOf(texto) + 1) % orden.length];
-    document.documentElement.dataset.texto = t;
+  const cambiarTexto = (t: TamanoTexto) => {
+    raiz().dataset.texto = t;
     guardar('sgim.texto', t);
     setTexto(t);
   };
-  return { tema, texto, cambiarTema, cambiarTexto };
+  const cambiarOpcion = (id: OpcionA11y, activa: boolean) => {
+    ponerOpcion(id, activa);
+    guardar(`sgim.a11y.${id}`, activa ? 'si' : 'no');
+    setOpciones((o) => ({ ...o, [id]: activa }));
+  };
+  /** «Restablecer valores»: tamaño normal y todas las opciones apagadas (el modo claro/oscuro no se toca). */
+  const restablecer = () => {
+    cambiarTexto('normal');
+    for (const o of OPCIONES_A11Y) cambiarOpcion(o.id, false);
+  };
+  return { tema, texto, opciones, cambiarTema, cambiarTexto, cambiarOpcion, restablecer };
+}
+
+/** Parte un texto largo en frases (los navegadores cortan la lectura de textos muy largos). */
+const frases = (texto: string) =>
+  texto
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?;:])\s+/)
+    .flatMap((f) => (f.length > 200 ? f.match(/.{1,200}(\s|$)/g) ?? [f] : [f]))
+    .map((f) => f.trim())
+    .filter(Boolean);
+
+/**
+ * Lectura en voz alta con la voz en español del propio navegador (Web Speech API): gratis y sin servicios externos.
+ * Lee el texto seleccionado o, si no hay selección, el contenido de la pantalla.
+ */
+export function useLecturaVoz() {
+  const soportada = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const [estado, setEstado] = useState<'detenida' | 'leyendo' | 'pausada'>('detenida');
+  useEffect(() => {
+    return () => {
+      if (soportada) window.speechSynthesis.cancel();
+    };
+  }, [soportada]);
+  const leerTexto = () => {
+    if (!soportada) return;
+    const seleccion = window.getSelection()?.toString().trim();
+    const texto = seleccion || (document.querySelector('.content') as HTMLElement | null)?.innerText || '';
+    const partes = frases(texto);
+    if (!partes.length) return;
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const voz = synth.getVoices().find((v) => v.lang.toLowerCase().startsWith('es'));
+    partes.forEach((p, i) => {
+      const u = new SpeechSynthesisUtterance(p);
+      u.lang = voz?.lang ?? 'es-ES';
+      if (voz) u.voice = voz;
+      if (i === partes.length - 1) u.onend = () => setEstado('detenida');
+      synth.speak(u);
+    });
+    setEstado('leyendo');
+  };
+  const pausar = () => {
+    if (estado === 'leyendo') {
+      window.speechSynthesis.pause();
+      setEstado('pausada');
+    } else if (estado === 'pausada') {
+      window.speechSynthesis.resume();
+      setEstado('leyendo');
+    }
+  };
+  const detener = () => {
+    if (soportada) window.speechSynthesis.cancel();
+    setEstado('detenida');
+  };
+  return { soportada, estado, leerTexto, pausar, detener };
 }

@@ -5,7 +5,7 @@
 // Opciones:  npm run dev -- --sin-tunel   (solo backend y frontend, sin tocar el webhook de WhatsApp)
 // Ctrl + C cierra los tres procesos. Sin dependencias: solo Node.
 import { spawn, execSync } from 'node:child_process';
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,7 +21,8 @@ function log(nombre, texto) {
 }
 
 function lanzar(nombre, carpeta, script) {
-  const p = spawn(`npm run ${script}`, { cwd: path.join(raiz, carpeta), shell: true, env: { ...process.env, FORCE_COLOR: '1' } });
+  // SGIM_INICIAR: el túnel no devuelve el número a producción por su cuenta; lo hace este script al cerrar
+  const p = spawn(`npm run ${script}`, { cwd: path.join(raiz, carpeta), shell: true, env: { ...process.env, FORCE_COLOR: '1', SGIM_INICIAR: '1' } });
   p.stdout.on('data', (d) => log(nombre, d));
   p.stderr.on('data', (d) => log(nombre, d));
   p.on('exit', (codigo) => {
@@ -43,11 +44,40 @@ async function esperarBackend(segundos = 60) {
   return false;
 }
 
+/** URL de producción (WA_WEBHOOK_PRODUCCION de backend/.env), sin la ruta del webhook. */
+function urlProduccion() {
+  try {
+    const linea = readFileSync(path.join(raiz, 'backend', '.env'), 'utf8').split(/\r?\n/).find((l) => /^\s*WA_WEBHOOK_PRODUCCION\s*=/.test(l));
+    return (linea?.split('=').slice(1).join('=').trim() ?? '').replace(/\/api\/whatsapp\/webhook\/?$/, '');
+  } catch {
+    return '';
+  }
+}
+
+/** Al cerrar, el número de WhatsApp vuelve a Vercel: nunca queda apuntando a un túnel muerto (Meta retrasaría los mensajes). */
+function volverAProduccion() {
+  if (!tunelAbierto) return;
+  const base = urlProduccion();
+  if (!base) {
+    log('sgim', '⚠ WA_WEBHOOK_PRODUCCION está vacío: el número queda apuntando a este túnel cerrado y el bot no responderá.');
+    log('sgim', '  Arréglalo con:  npm run webhook:produccion -- https://<tu-app>.vercel.app');
+    return;
+  }
+  log('sgim', `Devolviendo WhatsApp a producción (${base})...`);
+  try {
+    execSync(`npm run webhook:produccion -- ${base}`, { cwd: path.join(raiz, 'backend'), stdio: 'inherit', timeout: 60_000 });
+  } catch {
+    log('sgim', `⚠ No se pudo devolver a producción. Hazlo a mano:  npm run webhook:produccion -- ${base}`);
+  }
+}
+
 let cerrando = false;
+let tunelAbierto = false;
 function cerrar(codigo = 0) {
   if (cerrando) return;
   cerrando = true;
   log('sgim', 'Cerrando backend, túnel y frontend...');
+  volverAProduccion();
   for (const p of procesos) {
     if (p.exitCode !== null) continue;
     try {
@@ -60,6 +90,7 @@ function cerrar(codigo = 0) {
 }
 process.on('SIGINT', () => cerrar(0));
 process.on('SIGTERM', () => cerrar(0));
+process.on('SIGHUP', () => cerrar(0)); // cerrar la ventana de la terminal con la X
 
 // Primera vez en una PC: sin backend/.env no hay base configurada
 if (!existsSync(path.join(raiz, 'backend', '.env'))) {
@@ -86,7 +117,11 @@ if (!(await esperarBackend())) {
   cerrar(1);
 } else {
   log('sgim', 'Backend listo en http://localhost:3000');
-  if (conTunel) lanzar('tunel', 'backend', 'tunel');
+  if (conTunel) {
+    tunelAbierto = true;
+    lanzar('tunel', 'backend', 'tunel');
+    if (urlProduccion()) log('sgim', 'Al cerrar (Ctrl + C), el número de WhatsApp vuelve solo a producción.');
+  }
   lanzar('frontend', 'frontend', 'dev');
   log('sgim', 'Panel: http://localhost:5173   ·   Ctrl + C para cerrar todo');
 }

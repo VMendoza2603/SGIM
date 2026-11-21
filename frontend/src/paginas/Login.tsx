@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { inicioDe, useSesion } from '../auth';
+import { InputContrasena } from '../ui';
 
 /** Número del chatbot (solo dígitos, con código de país). Se cambia en frontend/.env al tener el número oficial "SGIM". */
 const NUMERO_CHATBOT = (import.meta.env.VITE_WHATSAPP_NUMERO ?? '15552129600').replace(/\D/g, '');
@@ -20,7 +21,6 @@ export function Login() {
   const navigate = useNavigate();
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
-  const [ver, setVer] = useState(false);
   const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -32,7 +32,7 @@ export function Login() {
     setError('');
     setEnviando(true);
     try {
-      const u = await iniciar(correo, password);
+      const u = await iniciar(correo, password, recordar);
       navigate(u.debeCambiarPwd ? '/primer-ingreso' : inicioDe(u), { replace: true });
     } catch (err) {
       setError((err as Error).message);
@@ -69,20 +69,7 @@ export function Login() {
         </div>
         <div className="field">
           <label htmlFor="lg-pwd">Contraseña</label>
-          <div className="input-wrap">
-            <input
-              id="lg-pwd"
-              className="input"
-              type={ver ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button type="button" onClick={() => setVer(!ver)} aria-label={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
-              👁
-            </button>
-          </div>
+          <InputContrasena id="lg-pwd" autoComplete="current-password" required value={password} onChange={setPassword} />
         </div>
         <div className="row between">
           <label className="check">

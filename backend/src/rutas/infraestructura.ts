@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requierePermiso } from '../auth.js';
-import { query, queryOne } from '../db.js';
+import { query, queryOne, escaparLike } from '../db.js';
 import { HttpError, noEncontrado, ruta } from '../errores.js';
 import { auditar } from '../servicios/auditoria.js';
 
@@ -10,6 +10,47 @@ const gestionaUbic = requierePermiso('ubicacion.gestionar');
 const gestionaEq = requierePermiso('equipo.gestionar');
 
 // ================================================================ A06 · Ubicaciones
+/**
+ * Lugares (aulas, laboratorios, baños…) con más incidentes en el periodo, para saber qué curso o espacio
+ * tiene más problemas y planificar mantenimiento preventivo. No cuenta los incidentes cancelados.
+ */
+infraestructuraRouter.get(
+  '/ubicaciones/ranking',
+  gestionaUbic,
+  ruta(async (req, res) => {
+    const { dias } = z.object({ dias: z.coerce.number().int().min(1).max(730).default(90) }).parse(req.query);
+    const [filas, sinLugar] = await Promise.all([
+      query(
+        `WITH periodo AS (
+           SELECT i.*, e.es_final, e.codigo AS estado, p.codigo AS prioridad, c.nombre AS categoria
+             FROM incidente i JOIN estado_incidente e ON e.id_estado = i.id_estado
+             LEFT JOIN prioridad p ON p.id_prioridad = i.id_prioridad LEFT JOIN categoria c ON c.id_categoria = i.id_categoria
+            WHERE i.id_ubicacion IS NOT NULL AND e.codigo <> 'CANCELADO' AND i.fecha_reporte >= now() - make_interval(days => $1)
+         )
+         SELECT u.id_ubicacion, u.codigo, u.nombre, b.nombre AS bloque, tu.nombre AS tipo,
+                count(*)::int AS total,
+                count(*) FILTER (WHERE NOT x.es_final)::int AS activos,
+                count(*) FILTER (WHERE x.prioridad = 'ALTA')::int AS altas,
+                (SELECT x2.categoria FROM periodo x2 WHERE x2.id_ubicacion = u.id_ubicacion AND x2.categoria IS NOT NULL
+                  GROUP BY x2.categoria ORDER BY count(*) DESC, x2.categoria LIMIT 1) AS categoria_frecuente,
+                max(x.fecha_reporte) AS ultimo
+           FROM periodo x JOIN ubicacion u ON u.id_ubicacion = x.id_ubicacion
+           JOIN bloque b ON b.id_bloque = u.id_bloque JOIN tipo_ubicacion tu ON tu.id_tipo_ubicacion = u.id_tipo_ubicacion
+          GROUP BY u.id_ubicacion, b.nombre, tu.nombre
+          ORDER BY total DESC, activos DESC, u.codigo
+          LIMIT 10`,
+        [dias],
+      ),
+      queryOne(
+        `SELECT count(*)::int AS n FROM incidente i JOIN estado_incidente e ON e.id_estado = i.id_estado
+          WHERE i.id_ubicacion IS NULL AND e.codigo <> 'CANCELADO' AND i.fecha_reporte >= now() - make_interval(days => $1)`,
+        [dias],
+      ),
+    ]);
+    res.json({ dias, filas, sin_lugar: sinLugar?.n ?? 0 });
+  }),
+);
+
 infraestructuraRouter.get(
   '/ubicaciones',
   gestionaUbic,
@@ -132,7 +173,7 @@ infraestructuraRouter.get(
             AND ($2::int IS NULL OR e.id_ubicacion = $2)
             AND ($3::text IS NULL OR e.estado::text = $3)
           ORDER BY e.activo DESC, e.codigo_inventario`,
-        [f.q || null, f.ubicacion ?? null, f.estado || null],
+        [f.q ? escaparLike(f.q) : null, f.ubicacion ?? null, f.estado || null],
       ),
       query(`SELECT te.id_tipo_equipo AS id, te.nombre, c.nombre AS categoria FROM tipo_equipo te JOIN categoria c USING (id_categoria) ORDER BY te.nombre`),
     ]);

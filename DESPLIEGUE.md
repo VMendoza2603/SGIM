@@ -9,9 +9,10 @@ Requisitos: Node.js 20+, PostgreSQL 17 y (para el chatbot en local) cloudflared.
    ```bash
    powershell -NoProfile -ExecutionPolicy Bypass -File .\database\setup.ps1
    ```
-   Ejecuta `01_schema` → `02_seed` → migraciones `04`, `05` (técnico líder) y `06` (técnico líder real).
+   Ejecuta `01_schema` → `02_seed` → migraciones `04`, `05` (técnico líder), `06` (técnico líder real) y `07` (zona horaria de Ecuador).
 3. Agregar a `backend/.env` las claves de WhatsApp y Gemini (copiarlas del `.env` de la PC original **por USB o un medio privado, nunca por chat**):
    `WA_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_VERIFY_TOKEN`, `WA_APP_SECRET`, `WA_APP_ID`, `GEMINI_API_KEY`.
+   Para el correo de recuperación de contraseña: `CORREO_USUARIO` (cuenta de Gmail) y `CORREO_CLAVE_APP` (contraseña de aplicación de Google). Se prueba con `npm run correo:probar -- tu.correo@ejemplo.com` (en `backend/`). En Vercel van como variables de entorno (las sube `vercel-variables.ps1`).
    Y en `frontend/.env`: `VITE_WHATSAPP_NUMERO=593980934394`.
 4. Dependencias y datos de ejemplo:
    ```bash
@@ -74,6 +75,10 @@ npm run webhook:produccion -- https://sgim.vercel.app
 ```
 Comprueba que Vercel responda y registra la URL en la app de Meta y en el número. Desde ahí el bot responde aunque tu PC esté apagada.
 (Si después corres `npm run tunel` en local, el número vuelve a apuntar al túnel; repite este paso para regresar a Vercel.)
+
+**Antes de presentar o probar:** `npm run whatsapp:estado` (en la raíz) dice a dónde apunta el número y si esa dirección responde.
+Al cerrar `npm run dev` con Ctrl + C, el número vuelve solo a Vercel (requiere `WA_WEBHOOK_PRODUCCION` en `backend/.env`).
+Si el número apunta a un túnel cerrado, Meta retrasa los mensajes (los reintenta y los retiene en fila).
 
 ### 4. Reintentos de avisos (opcional, recomendado)
 Los avisos salen al instante; si alguno falla por algo pasajero, se reintenta llamando a `/api/cron/notificaciones`.

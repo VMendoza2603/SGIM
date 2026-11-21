@@ -61,12 +61,11 @@ export function Historial() {
           <option value="12">Últimos 12 meses</option>
           <option value="24">Últimos 24 meses</option>
         </select>
-        {!soloLectura && (
-          <select id="h-tecnico" className="input" aria-label="Técnico" value={tecnico} onChange={(e) => setTecnico(e.target.value)}>
-            <option value="">Técnico: Todos</option>
-            {cat?.tecnicos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-          </select>
-        )}
+        {/* Coordinador y técnicos pueden filtrar por técnico (incluye los incidentes que se le reasignaron a otro) */}
+        <select id="h-tecnico" className="input" aria-label="Técnico" value={tecnico} onChange={(e) => setTecnico(e.target.value)}>
+          <option value="">Técnico: Todos</option>
+          {cat?.tecnicos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+        </select>
       </div>
 
       {error && <ErrorBox msg={error} />}

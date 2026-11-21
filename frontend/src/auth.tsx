@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, eventos, token } from './api';
+import { api, ApiError, eventos, token } from './api';
 
 export interface Usuario {
   id: number;
@@ -15,7 +15,7 @@ export interface Usuario {
 interface Sesion {
   usuario: Usuario | null;
   cargando: boolean;
-  iniciar: (correo: string, password: string) => Promise<Usuario>;
+  iniciar: (correo: string, password: string, recordar?: boolean) => Promise<Usuario>;
   salir: () => void;
   actualizar: (u: Usuario) => void;
   puede: (...permisos: string[]) => boolean;
@@ -29,10 +29,25 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!token.leer()) return;
-    api<Usuario>('/auth/me')
-      .then(setUsuario)
-      .catch(() => token.borrar())
-      .finally(() => setCargando(false));
+    // La sesión solo se borra si el servidor la rechaza (401/403). Si el servidor se está reiniciando o la red falla
+    // un momento, se reintenta (hasta ~20 s) en vez de mandar al usuario al login.
+    let vigente = true;
+    const intentar = (n: number) =>
+      api<Usuario>('/auth/me')
+        .then((u) => vigente && (setUsuario(u), setCargando(false)))
+        .catch((e) => {
+          if (!vigente) return;
+          const status = (e as ApiError).status;
+          if (status === 401 || status === 403) {
+            token.borrar();
+            setCargando(false);
+          } else if (n < 10) setTimeout(() => intentar(n + 1), 2000);
+          else setCargando(false);
+        });
+    intentar(1);
+    return () => {
+      vigente = false;
+    };
   }, []);
 
   const salir = useCallback(() => {
@@ -45,9 +60,9 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     return () => eventos.removeEventListener('sesion-expirada', salir);
   }, [salir]);
 
-  const iniciar = async (correo: string, password: string) => {
+  const iniciar = async (correo: string, password: string, recordar = false) => {
     const r = await api<{ token: string; usuario: Usuario }>('/auth/login', { method: 'POST', body: { correo, password } });
-    token.guardar(r.token);
+    token.guardar(r.token, recordar);
     setUsuario(r.usuario);
     return r.usuario;
   };

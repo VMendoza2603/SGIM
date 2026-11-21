@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requierePermiso } from '../auth.js';
-import { query } from '../db.js';
+import { query, escaparLike } from '../db.js';
 import { ruta } from '../errores.js';
 
 export const catalogosRouter = Router();
@@ -42,7 +42,7 @@ catalogosRouter.get(
           WHERE r.codigo = 'COMUNIDAD' AND u.activo
             AND (u.nombres || ' ' || u.apellidos ILIKE '%' || $1 || '%' OR u.telefono_wa LIKE '%' || $1 || '%')
           ORDER BY u.nombres LIMIT 10`,
-        [q],
+        [escaparLike(q)],
       ),
     );
   }),

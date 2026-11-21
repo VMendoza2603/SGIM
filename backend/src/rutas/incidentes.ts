@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requierePermiso, tiene } from '../auth.js';
-import { query, queryOne, transaccion } from '../db.js';
+import { query, queryOne, transaccion, escaparLike } from '../db.js';
 import { HttpError, noEncontrado, prohibido, ruta } from '../errores.js';
 import { asignar } from '../servicios/asignacion.js';
 import { cambiarEstado, crearIncidente, guardarFoto } from '../servicios/incidentes.js';
@@ -104,7 +104,7 @@ incidentesRouter.get(
       add(
         `(i.codigo ILIKE ? OR i.titulo ILIKE $${params.length + 1} OR u.codigo ILIKE $${params.length + 1} OR eq.codigo_inventario ILIKE $${params.length + 1}
           OR (ut.nombres || ' ' || ut.apellidos) ILIKE $${params.length + 1})`,
-        `%${f.q}%`,
+        `%${escaparLike(f.q)}%`,
       );
     }
 

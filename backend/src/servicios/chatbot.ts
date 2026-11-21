@@ -386,6 +386,10 @@ async function buscarUbicacion(texto: string) {
   );
 }
 
+/** ¿El texto es idéntico a lo que ya mandó como descripción? (reenvío mientras el agente analizaba) */
+const esRepetido = (rep: Contexto, texto: string) =>
+  !!rep.descripcion && !rep.descripcionIa && String(rep.descripcion).split('\n').some((l) => norm(l) === norm(texto));
+
 async function pasoUbicacion(s: Sesion, m: Entrante) {
   const rep = { ...s.ctx.rep };
   const id = m.idRespuesta ?? '';
@@ -411,11 +415,26 @@ async function pasoUbicacion(s: Sesion, m: Entrante) {
     const texto = m.texto!.trim();
     const u = (await buscarUbicacion(texto)) ?? (await ubicacionEnTexto(texto));
     if (u) return avanzarReporte(s, { ...rep, ...datosLugar(u) });
+    // Mensaje repetido o escrito mientras el agente analizaba (la gente suele reenviar el reporte): no es el lugar.
+    // Se vuelve a preguntar en vez de guardar la descripción como «lugar no reconocido» (hallado en la prueba de 10 personas a la vez).
+    // Solo cuenta como repetido el mismo texto exacto (un lugar escrito en palabras sí puede aparecer dentro de la descripción).
+    if (esRepetido(rep, texto)) {
+      if (rep.avisoRepetido) return; // ya se le pidió el lugar: los reenvíos idénticos se ignoran (sin bucles)
+      await s.guardar('ESPERANDO_UBICACION', { rep: { ...rep, avisoRepetido: true } });
+      return s.decir('Ya tengo la descripción del daño 👍. Ahora dime *en qué lugar* está: el código (por ejemplo *B-204*) o el nombre (por ejemplo _laboratorio de química_).');
+    }
     // Nombre del lugar en palabras ("laboratorio de química"): el agente lo busca entre las ubicaciones registradas
     const a = iaActiva()
       ? await analizarReporte(`${rep.descripcionIa ? '' : rep.descripcion ?? ''}\nLugar indicado por el reportante: ${texto}`, rep.foto ? { url: rep.foto.url, mime: rep.foto.mime } : null)
       : null;
     if (a?.idUbicacion) return avanzarReporte(s, { ...rep, ia: a, idUbicacion: a.idUbicacion, ubicacion: a.ubicacion, codigoUbicacion: a.codigoUbicacion, ubicacionTexto: null });
+    // Texto largo sin un lugar reconocible: probablemente es más detalle del daño. Se suma a la descripción y se pregunta
+    // el lugar una vez más; si vuelve a escribir algo que no se reconoce, se registra tal cual para revisión manual.
+    if (texto.length > 60 && !rep.repreguntoLugar) {
+      const descripcion = rep.descripcionIa || !rep.descripcion ? texto : `${rep.descripcion}\n${texto}`;
+      await s.guardar('ESPERANDO_UBICACION', { rep: { ...rep, descripcion, descripcionIa: false, repreguntoLugar: true } });
+      return s.decir('Anoté ese detalle del daño 📝. ¿*En qué lugar* está? Escribe el código (por ejemplo *B-204*) o el nombre del lugar.');
+    }
     await s.decir('No encontré ese lugar en el sistema. Lo registraré tal como lo escribiste y coordinación lo revisará 👍');
     return avanzarReporte(s, { ...rep, idUbicacion: null, ubicacionTexto: texto.slice(0, 255), ubicacion: texto });
   }
@@ -427,6 +446,16 @@ async function pasoFoto(s: Sesion, m: Entrante, foto: Foto | null) {
   if (foto) return avanzarReporte(s, { ...rep, foto }, true); // con la foto el agente vuelve a analizar
   if (m.tipo === 'imagen') return s.decir('No pude recibir la foto 😕. Intenta enviarla de nuevo o pulsa *Omitir foto*.');
   if (m.idRespuesta === 'rep:omitir_foto' || norm(m.texto) === 'omitir') return avanzarReporte(s, { ...rep, sinFoto: true });
+  // Reenvío idéntico del reporte mientras se analizaba: ya se le pidió la foto, no se repite el mensaje
+  if (m.tipo === 'texto' && m.texto && esRepetido(rep, m.texto)) return;
+  // Si el lugar quedó sin reconocer y ahora escribe un código válido (A-202, B 204), se corrige el lugar
+  if (m.tipo === 'texto' && !rep.idUbicacion && m.texto) {
+    const u = (await buscarUbicacion(m.texto.trim())) ?? (await ubicacionEnTexto(m.texto));
+    if (u) {
+      await s.guardar('ESPERANDO_FOTO', { rep: { ...rep, ...datosLugar(u) } });
+      return s.enviar({ tipo: 'botones', texto: `📍 Anotado: *${u.codigo} · ${u.nombre}*.\n\nAhora envía una foto del daño o pulsa *Omitir foto*.`, botones: [{ id: 'rep:omitir_foto', titulo: 'Omitir foto' }] });
+    }
+  }
   return s.enviar({ tipo: 'botones', texto: 'Envía una foto o pulsa *Omitir foto*.', botones: [{ id: 'rep:omitir_foto', titulo: 'Omitir foto' }] });
 }
 

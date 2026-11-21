@@ -8,7 +8,6 @@ type Formato = 'num' | 'pct' | 'h' | 'star' | 'fecha' | 'texto';
 type Columna = { k: string; t: string; f?: Formato };
 type Tarjeta = { k: string; t: string; f?: Formato; sub?: (r: any) => string };
 interface Config {
-  icono: string;
   desc: string;
   columnas: Columna[];
   tarjetas: Tarjeta[];
@@ -29,7 +28,6 @@ function formato(v: any, f: Formato = 'num') {
 /** Qué muestra cada reporte (los datos vienen de GET /reportes/:id). */
 const CONFIG: Record<string, Config> = {
   'categoria-prioridad': {
-    icono: '🏷️',
     desc: 'Cuántos incidentes hubo de cada tipo y con qué prioridad',
     columnas: [
       { k: 'categoria', t: 'Categoría', f: 'texto' }, { k: 'alta', t: 'Alta' }, { k: 'media', t: 'Media' }, { k: 'baja', t: 'Baja' },
@@ -44,7 +42,6 @@ const CONFIG: Record<string, Config> = {
     grafico: { titulo: 'Incidentes por categoría', etiqueta: 'categoria', valor: 'total' },
   },
   sla: {
-    icono: '⏱️',
     desc: 'Porcentaje atendido dentro del tiempo estimado, por prioridad',
     columnas: [
       { k: 'prioridad', t: 'Prioridad', f: 'texto' }, { k: 'plazo_horas', t: 'Tiempo estimado', f: 'h' }, { k: 'incidentes', t: 'Incidentes' },
@@ -59,7 +56,6 @@ const CONFIG: Record<string, Config> = {
     grafico: { titulo: 'Cumplimiento por prioridad', etiqueta: 'prioridad', valor: 'porcentaje', f: 'pct', max: 100 },
   },
   tecnicos: {
-    icono: '👷',
     desc: 'Resueltos, a tiempo, reasignados, tiempo medio y calificación de cada técnico',
     columnas: [
       { k: 'tecnico', t: 'Técnico', f: 'texto' }, { k: 'activos', t: 'Pendientes' }, { k: 'resueltos', t: 'Resueltos' }, { k: 'a_tiempo', t: 'A tiempo' },
@@ -76,7 +72,6 @@ const CONFIG: Record<string, Config> = {
     enlace: (f) => `/tecnicos/${f.id_tecnico}`,
   },
   ubicaciones: {
-    icono: '📍',
     desc: 'Los 10 lugares con más fallas, para planificar mantenimiento preventivo',
     columnas: [
       { k: 'codigo', t: 'Código', f: 'texto' }, { k: 'ubicacion', t: 'Ubicación', f: 'texto' }, { k: 'incidentes', t: 'Incidentes' },
@@ -90,7 +85,6 @@ const CONFIG: Record<string, Config> = {
     grafico: { titulo: 'Incidentes por lugar', etiqueta: 'codigo', valor: 'incidentes' },
   },
   ia: {
-    icono: '🤖',
     desc: 'Cuántas veces el coordinador tuvo que corregir la categoría o la prioridad',
     columnas: [
       { k: 'categoria', t: 'Categoría', f: 'texto' }, { k: 'analizados', t: 'Analizados' }, { k: 'categoria_correcta', t: 'Categoría correcta' },
@@ -105,7 +99,6 @@ const CONFIG: Record<string, Config> = {
     grafico: { titulo: 'Acierto de categoría', etiqueta: 'categoria', valor: 'pct_categoria', f: 'pct', max: 100 },
   },
   satisfaccion: {
-    icono: '⭐',
     desc: 'Calificación que dan los reportantes por WhatsApp al cerrar el incidente',
     columnas: [
       { k: 'categoria', t: 'Categoría', f: 'texto' }, { k: 'calificaciones', t: 'Calificaciones' }, { k: 'promedio', t: 'Promedio', f: 'star' },
@@ -198,7 +191,7 @@ export function Reportes() {
         <div className="grid g3">
           {lista.map((r) => (
             <button key={r.id} className="card stack-sm" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => { setReporte(null); setAbierto(r.id); }}>
-              <h4><span aria-hidden="true">{CONFIG[r.id]?.icono} </span>{r.titulo}</h4>
+              <h4>{r.titulo}</h4>
               <div className="small muted">{CONFIG[r.id]?.desc}</div>
               <div className="small" style={{ color: 'var(--accent)' }}>Ver reporte →</div>
             </button>
@@ -210,7 +203,7 @@ export function Reportes() {
         <div className="stack">
           <div className="row between">
             <div>
-              <h4 style={{ fontSize: 16 }}>{cfg.icono} {reporte.titulo}</h4>
+              <h4 style={{ fontSize: 16 }}>{reporte.titulo}</h4>
               <div className="small muted">Del {soloFecha(reporte.desde)} al {soloFecha(reporte.hasta)} · {cfg.desc}</div>
             </div>
             <div className="row no-print">

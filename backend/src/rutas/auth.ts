@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { autenticar, cargarUsuario, firmarToken } from '../auth.js';
-import { config } from '../config.js';
+import { correoActivo, correoRecuperacion, enviarCorreo, urlPanel } from '../servicios/correo.js';
+import { enSegundoPlano } from '../servicios/segundoPlano.js';
 import { query, queryOne } from '../db.js';
 import { HttpError, ruta } from '../errores.js';
 
@@ -134,7 +135,7 @@ authRouter.post(
   ruta(async (req, res) => {
     const { correo } = z.object({ correo: z.string().trim().email() }).parse(req.body);
     const u = await queryOne(
-      `SELECT u.id_usuario FROM usuario u JOIN rol r ON r.id_rol = u.id_rol WHERE u.correo = $1 AND u.activo AND r.acceso_web`,
+      `SELECT u.id_usuario, u.nombres, u.correo FROM usuario u JOIN rol r ON r.id_rol = u.id_rol WHERE u.correo = $1 AND u.activo AND r.acceso_web`,
       [correo],
     );
     if (u) {
@@ -144,8 +145,19 @@ authRouter.post(
         u.id_usuario,
         sha256(token),
       ]);
-      // El envío por correo se conecta en la etapa de notificaciones; en desarrollo el enlace sale en la consola.
-      console.log(`[recuperar] Enlace para ${correo}: ${config.frontendOrigin}/restablecer?token=${token}`);
+      const enlace = `${urlPanel()}/restablecer?token=${token}`;
+      if (correoActivo()) {
+        // En segundo plano: la respuesta sale igual de rápido exista o no la cuenta (no revela qué correos están registrados)
+        const c = correoRecuperacion(u.nombres, enlace);
+        enSegundoPlano(
+          enviarCorreo(u.correo, c.asunto, c.html, c.texto)
+            .then(() => console.log(`[recuperar] Correo enviado a ${u.correo}`))
+            .catch((e) => console.error(`[recuperar] No se pudo enviar el correo a ${u.correo}: ${(e as Error).message}`)),
+        );
+      } else {
+        // Sin CORREO_USUARIO / CORREO_CLAVE_APP (desarrollo): el enlace sale en la consola del backend
+        console.log(`[recuperar] Correo no configurado. Enlace para ${correo}: ${enlace}`);
+      }
     }
     // Misma respuesta exista o no el correo, para no revelar qué cuentas existen.
     res.json({ ok: true });
@@ -161,6 +173,11 @@ authRouter.post(
       [sha256(token)],
     );
     if (!t) throw new HttpError(400, 'El enlace no es válido o ya caducó. Solicita uno nuevo.');
+    // No se acepta la misma contraseña que ya tenía (el enlace sigue sirviendo para intentar con otra)
+    const u = await queryOne(`SELECT password_hash FROM usuario WHERE id_usuario = $1`, [t.id_usuario]);
+    if (u?.password_hash && (await bcrypt.compare(nueva, u.password_hash))) {
+      throw new HttpError(400, 'La nueva contraseña debe ser distinta a la anterior');
+    }
     await query(`UPDATE token_recuperacion SET usado_en = now() WHERE id_token = $1`, [t.id_token]);
     await fijarContrasena(t.id_usuario, nueva, 'RESTABLECER_PASSWORD');
     res.json({ ok: true });

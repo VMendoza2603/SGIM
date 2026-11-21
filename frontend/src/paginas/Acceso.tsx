@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, token } from '../api';
 import { inicioDe, useSesion, type Usuario } from '../auth';
+import { InputContrasena } from '../ui';
 
 /** P02 · Recuperar contraseña: pide un enlace de un solo uso (válido 30 minutos). */
 export function Recuperar() {
@@ -77,11 +78,11 @@ export function PrimerIngreso() {
         <div className="notice n-info">Es tu primer ingreso. Por seguridad debes reemplazar la contraseña temporal.</div>
         <div className="field">
           <label htmlFor="pi-actual">Contraseña temporal</label>
-          <input id="pi-actual" className="input" type="password" value={actual} onChange={(e) => setActual(e.target.value)} />
+          <InputContrasena id="pi-actual" autoComplete="current-password" value={actual} onChange={setActual} />
         </div>
         <div className="field">
           <label htmlFor="pi-nueva">Nueva contraseña</label>
-          <input id="pi-nueva" className="input" type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} />
+          <InputContrasena id="pi-nueva" value={nueva} onChange={setNueva} />
         </div>
         <div className="small">
           {REGLAS_CONTRASENA.map((r) => (
@@ -92,7 +93,7 @@ export function PrimerIngreso() {
         </div>
         <div className="field">
           <label htmlFor="pi-confirma">Confirmar contraseña</label>
-          <input id="pi-confirma" className="input" type="password" value={confirma} onChange={(e) => setConfirma(e.target.value)} />
+          <InputContrasena id="pi-confirma" value={confirma} onChange={setConfirma} />
           {confirma && confirma !== nueva && <span style={{ color: 'var(--bad)' }}>Las contraseñas no coinciden</span>}
         </div>
         <button className="btn pri block" disabled={!valida}>Guardar y continuar</button>
@@ -130,7 +131,7 @@ export function Restablecer() {
         <h3>Define tu nueva contraseña</h3>
         <div className="field">
           <label htmlFor="rs-nueva">Nueva contraseña</label>
-          <input id="rs-nueva" className="input" type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} />
+          <InputContrasena id="rs-nueva" value={nueva} onChange={setNueva} />
         </div>
         <div className="small">
           {REGLAS_CONTRASENA.map((r) => (
@@ -139,7 +140,7 @@ export function Restablecer() {
         </div>
         <div className="field">
           <label htmlFor="rs-confirma">Confirmar contraseña</label>
-          <input id="rs-confirma" className="input" type="password" value={confirma} onChange={(e) => setConfirma(e.target.value)} />
+          <InputContrasena id="rs-confirma" value={confirma} onChange={setConfirma} />
         </div>
         <button className="btn pri block" disabled={!valida || listo}>Guardar contraseña</button>
         {listo && <div className="notice n-ok">Contraseña actualizada. Te llevamos al inicio de sesión…</div>}
@@ -151,15 +152,21 @@ export function Restablecer() {
 }
 
 /** P04 · Acceso denegado */
-export function SinAcceso() {
+/** P04 · 403 (sin permiso) o, con `noExiste`, 404 (dirección que no existe en el panel). */
+export function SinAcceso({ noExiste = false }: { noExiste?: boolean }) {
   const { usuario } = useSesion();
+  const tecnico = usuario?.rol === 'TECNICO';
   return (
     <div style={{ display: 'grid', placeItems: 'center', flex: 1 }}>
       <div style={{ textAlign: 'center', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
-        <div className="mono" style={{ fontSize: 44, fontWeight: 700, color: 'var(--accent)' }}>403</div>
-        <h3>No tienes acceso a esta sección</h3>
+        <div className="mono" style={{ fontSize: 44, fontWeight: 700, color: 'var(--accent)' }}>{noExiste ? '404' : '403'}</div>
+        <h3>{noExiste ? 'Esta página no existe' : 'No tienes acceso a esta sección'}</h3>
         <div className="small muted">
-          Esta sección solo está disponible para el coordinador de mantenimiento. Si necesitas cambiar algo, pídeselo al coordinador.
+          {noExiste
+            ? 'Revisa la dirección o vuelve al inicio con el botón de abajo.'
+            : tecnico
+              ? 'Esta sección solo está disponible para el coordinador de mantenimiento. Si necesitas cambiar algo, pídeselo al coordinador.'
+              : 'Esta sección es de uso exclusivo de los técnicos (sus incidentes asignados). Desde tu cuenta puedes verlos en Incidentes.'}
         </div>
         {usuario && (
           <Link className="btn pri" to={inicioDe(usuario)}>

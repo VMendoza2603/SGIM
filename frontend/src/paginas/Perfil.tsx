@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, token } from '../api';
 import { useSesion, type Usuario } from '../auth';
-import { Campo, Cargando, ErrorBox, Telefono, useAccion, useCarga } from '../ui';
+import { Campo, Cargando, ErrorBox, Telefono, useAccion, useCarga, InputContrasena } from '../ui';
 import { REGLAS_CONTRASENA } from './Acceso';
 
 /** T04 · Mi perfil (también para el coordinador). */
@@ -59,8 +59,8 @@ export function Perfil() {
         </form>
         <form className="card stack" onSubmit={cambiarClave}>
           <h4>Cambiar contraseña</h4>
-          <Campo id="pf-actual" etiqueta="Contraseña actual"><input id="pf-actual" className="input" type="password" autoComplete="current-password" value={actual} onChange={(e) => setActual(e.target.value)} /></Campo>
-          <Campo id="pf-nueva" etiqueta="Nueva contraseña"><input id="pf-nueva" className="input" type="password" autoComplete="new-password" value={nueva} onChange={(e) => setNueva(e.target.value)} /></Campo>
+          <Campo id="pf-actual" etiqueta="Contraseña actual"><InputContrasena id="pf-actual" autoComplete="current-password" value={actual} onChange={setActual} /></Campo>
+          <Campo id="pf-nueva" etiqueta="Nueva contraseña"><InputContrasena id="pf-nueva" value={nueva} onChange={setNueva} /></Campo>
           <div className="small">
             {REGLAS_CONTRASENA.map((r) => (
               <span key={r.txt} style={{ marginRight: 10, color: r.ok(nueva) ? 'var(--ok)' : 'var(--ink-2)' }}>{r.ok(nueva) ? '✓' : '○'} {r.txt}</span>

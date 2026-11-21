@@ -1,8 +1,82 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
-import { Campo, Cargando, Dialogo, ErrorBox, Interruptor, useAccion, useCarga } from '../ui';
+import { Campo, Cargando, Dialogo, ErrorBox, fechaCorta, Interruptor, useAccion, useCarga } from '../ui';
 
 type Formulario = { tipo: 'sede' | 'bloque' | 'ubicacion'; datos: any } | null;
+
+const PERIODOS = [
+  { dias: 30, texto: 'Últimos 30 días' },
+  { dias: 90, texto: 'Últimos 90 días' },
+  { dias: 365, texto: 'Último año' },
+];
+
+/** Qué curso o espacio tiene más problemas (ranking de incidentes por lugar, sin los cancelados). */
+function LugaresConMasProblemas() {
+  const [dias, setDias] = useState(90);
+  const { datos, error } = useCarga<{ filas: any[]; sin_lugar: number }>(`/infraestructura/ubicaciones/ranking?dias=${dias}`);
+  const max = Math.max(1, ...(datos?.filas ?? []).map((f) => f.total));
+  const primero = datos?.filas[0];
+  return (
+    <div className="card stack">
+      <div className="row between">
+        <div>
+          <h4>Lugares con más problemas</h4>
+          <div className="small muted">Cursos y espacios con más incidentes reportados, para priorizar el mantenimiento preventivo.</div>
+        </div>
+        <select id="rk-periodo" className="input" style={{ width: 'auto' }} aria-label="Periodo" value={dias} onChange={(e) => setDias(Number(e.target.value))}>
+          {PERIODOS.map((p) => <option key={p.dias} value={p.dias}>{p.texto}</option>)}
+        </select>
+      </div>
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !datos ? (
+        <Cargando />
+      ) : datos.filas.length === 0 ? (
+        <div className="empty">No hay incidentes con lugar registrado en este periodo.</div>
+      ) : (
+        <>
+          <div className="notice">
+            El lugar con más problemas es <b>{primero.codigo} · {primero.nombre}</b> ({primero.bloque}): {primero.total}{' '}
+            {primero.total === 1 ? 'incidente' : 'incidentes'}
+            {primero.categoria_frecuente ? `, sobre todo de ${primero.categoria_frecuente.toLowerCase()}` : ''}
+            {primero.activos ? ` · ${primero.activos} sin resolver` : ''}.
+          </div>
+          <div className="wrap-x">
+            <table className="t">
+              <thead>
+                <tr><th>#</th><th>Lugar</th><th>Bloque</th><th style={{ minWidth: 160 }}>Incidentes</th><th>Sin resolver</th><th>Prioridad alta</th><th>Tipo más frecuente</th><th>Último reporte</th></tr>
+              </thead>
+              <tbody>
+                {datos.filas.map((f, i) => (
+                  <tr key={f.id_ubicacion}>
+                    <td className="mono">{i + 1}</td>
+                    <td><b>{f.codigo}</b> · {f.nombre}<div className="small muted">{f.tipo}</div></td>
+                    <td>{f.bloque}</td>
+                    <td>
+                      <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'nowrap' }}>
+                        <div className="barra" style={{ flex: 1, minWidth: 60 }} aria-hidden="true"><div className="fill" style={{ width: `${(f.total / max) * 100}%` }} /></div>
+                        <span className="mono">{f.total}</span>
+                      </div>
+                    </td>
+                    <td className="mono">{f.activos}</td>
+                    <td className="mono">{f.altas}</td>
+                    <td>{f.categoria_frecuente ?? '—'}</td>
+                    <td className="small">{fechaCorta(f.ultimo)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {datos.sin_lugar > 0 && (
+            <div className="small muted">
+              Además hay {datos.sin_lugar} {datos.sin_lugar === 1 ? 'incidente' : 'incidentes'} con un lugar que el sistema no reconoció (en revisión manual); no se cuentan aquí.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 /** A06 · Ubicaciones: sede → bloque → ubicación */
 export function Ubicaciones() {
@@ -102,6 +176,8 @@ export function Ubicaciones() {
         </div>
       </div>
       <div className="small muted">Una ubicación con incidentes no se elimina: se desactiva para conservar su historial.</div>
+
+      <LugaresConMasProblemas />
 
       {form && (
         <Dialogo

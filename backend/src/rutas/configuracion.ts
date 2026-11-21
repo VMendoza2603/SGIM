@@ -36,6 +36,16 @@ const validar: Record<string, (v: string) => boolean> = {
   TEXT: () => true,
 };
 
+/** Límites razonables por parámetro: evitan, por ejemplo, un umbral de IA de 5 o un bloqueo de 0 minutos. */
+const RANGOS: Record<string, [number, number]> = {
+  'ia.umbral_confianza': [0, 1],
+  'verificacion.umbral_ia': [0, 1],
+  'seguridad.max_intentos_login': [1, 20],
+  'seguridad.minutos_bloqueo': [1, 1440],
+  'verificacion.horas_confirmar': [1, 720],
+  'archivo.max_mb': [1, 20],
+};
+
 configuracionRouter.put(
   '/parametros',
   requierePermiso('parametro.gestionar'),
@@ -47,7 +57,11 @@ configuracionRouter.put(
       if (!p.editable) throw new HttpError(400, `El parámetro ${p.clave} no es editable`);
       if (SENSIBLES.has(p.clave) && v.startsWith('••')) delete cambios[p.clave]; // no se tocó
       else if (!validar[p.tipo_dato](v)) throw new HttpError(400, `Valor inválido para ${p.clave}`);
+      else if (RANGOS[p.clave] && (Number(v) < RANGOS[p.clave][0] || Number(v) > RANGOS[p.clave][1])) {
+        throw new HttpError(400, `${p.clave} debe estar entre ${RANGOS[p.clave][0]} y ${RANGOS[p.clave][1]}`);
+      }
     }
+    if (Object.keys(cambios).length === 0) return res.json({ ok: true }); // nada que guardar ni auditar
     await transaccion(null, async (c) => {
       for (const [clave, valor] of Object.entries(cambios)) {
         await c.query(`UPDATE parametro_sistema SET valor = $2, actualizado_en = now() WHERE clave = $1`, [clave, valor]);

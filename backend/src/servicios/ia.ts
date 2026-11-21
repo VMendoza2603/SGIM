@@ -54,16 +54,30 @@ async function parteImagen(foto: FotoIa) {
  * Llama a Gemini pidiendo una respuesta JSON con el esquema indicado. Si el modelo principal está saturado (503),
  * sin cuota (429), ya no existe (404) o no responde a tiempo, prueba con los de respaldo en orden. Lanza error si ninguno responde.
  */
+/**
+ * Modelos que fallaron hace poco (saturado, sin cuota o colgado) → hasta cuándo se saltan.
+ * Así, si Google satura el principal, los siguientes reportes van directo al de respaldo
+ * y nadie espera los 12 s del tiempo límite en cada mensaje (comprobado en la prueba de 10 personas a la vez).
+ */
+const PAUSA_MODELO_MS = 5 * 60_000;
+const pausados = new Map<string, number>();
+
 async function preguntarGemini(instrucciones: string, partes: object[], esquema: object): Promise<RespuestaGemini> {
-  const modelos = [...new Set([config.ia.modelo, ...config.ia.modelosRespaldo])];
+  const todos = [...new Set([config.ia.modelo, ...config.ia.modelosRespaldo])];
+  const ahora = Date.now();
+  // Primero los disponibles (en su orden) y al final los pausados, por si todos los demás fallan
+  const modelos = [...todos.filter((m) => (pausados.get(m) ?? 0) <= ahora), ...todos.filter((m) => (pausados.get(m) ?? 0) > ahora)];
   let ultimo: Error | undefined;
   for (const modelo of modelos) {
     try {
-      return await llamarModelo(modelo, instrucciones, partes, esquema);
+      const r = await llamarModelo(modelo, instrucciones, partes, esquema);
+      pausados.delete(modelo);
+      return r;
     } catch (e) {
       ultimo = e as Error;
       if (!(e as any).reintentable) throw e;
-      console.warn(`[ia] ${modelo} no disponible (${ultimo.message.slice(0, 80)}); probando el siguiente modelo`);
+      pausados.set(modelo, Date.now() + PAUSA_MODELO_MS);
+      console.warn(`[ia] ${modelo} no disponible (${ultimo.message.slice(0, 80)}); se salta 5 min y se prueba el siguiente modelo`);
     }
   }
   throw ultimo!;

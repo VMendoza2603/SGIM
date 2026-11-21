@@ -41,7 +41,7 @@ Write-Host 'Subiendo variables a Vercel (producción)...'
 Subir 'DATABASE_URL' $neon
 Subir 'JWT_SECRET' $jwt
 Subir 'CRON_SECRET' $cron
-foreach ($n in 'WA_TOKEN', 'WA_PHONE_NUMBER_ID', 'WA_VERIFY_TOKEN', 'WA_APP_SECRET', 'WA_APP_ID', 'GEMINI_API_KEY', 'GEMINI_MODELO', 'GEMINI_MODELO_RESPALDO') {
+foreach ($n in 'WA_TOKEN', 'WA_PHONE_NUMBER_ID', 'WA_VERIFY_TOKEN', 'WA_APP_SECRET', 'WA_APP_ID', 'GEMINI_API_KEY', 'GEMINI_MODELO', 'GEMINI_MODELO_RESPALDO', 'CORREO_USUARIO', 'CORREO_CLAVE_APP') {
     Subir $n $back[$n]
 }
 Subir 'VITE_WHATSAPP_NUMERO' $front['VITE_WHATSAPP_NUMERO']

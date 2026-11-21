@@ -87,7 +87,7 @@ createRoot(document.getElementById('root')!).render(
             {RUTAS.map(([ruta, permiso, pantalla]) => (
               <Route key={ruta} path={ruta} element={<Con permiso={permiso}>{pantalla}</Con>} />
             ))}
-            <Route path="*" element={<SinAcceso />} />
+            <Route path="*" element={<SinAcceso noExiste />} />
           </Route>
         </Routes>
       </BrowserRouter>

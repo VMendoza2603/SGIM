@@ -8,7 +8,7 @@
  *    Meta verifica la URL al registrarla, así que se reintenta mientras la dirección se propaga.
  * El túnel queda abierto hasta cerrar esta ventana o pulsar Ctrl+C.
  */
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { config } from '../config.js';
 
@@ -22,6 +22,26 @@ function ejecutable() {
   if (process.env.CLOUDFLARED_PATH) return process.env.CLOUDFLARED_PATH;
   const windows = 'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe';
   return fs.existsSync(windows) ? windows : 'cloudflared';
+}
+
+/**
+ * Devuelve el número a producción (Vercel) al cerrar el túnel.
+ * Si el túnel lo abrió `npm run dev` de la raíz (SGIM_INICIAR=1), lo hace iniciar.mjs, para no repetirlo.
+ */
+function volverAProduccion() {
+  if (process.env.SGIM_INICIAR) return;
+  const base = PRODUCCION.replace(/\/api\/whatsapp\/webhook\/?$/, '');
+  if (!base) {
+    console.log('⚠ WA_WEBHOOK_PRODUCCION está vacío: el número sigue apuntando a este túnel, que ya se cerró.');
+    console.log('  Para que el bot vuelva a responder: npm run webhook:produccion -- https://<tu-app>.vercel.app');
+    return;
+  }
+  console.log('Devolviendo WhatsApp a producción…');
+  try {
+    execSync(`npm run webhook:produccion -- ${base}`, { stdio: 'inherit', timeout: 60_000 });
+  } catch {
+    console.log(`⚠ No se pudo devolver a producción. Hazlo a mano: npm run webhook:produccion -- ${base}`);
+  }
 }
 
 function salir(msg: string): never {
@@ -44,11 +64,16 @@ function abrirTunel(): Promise<string> {
   return new Promise((resolve, reject) => {
     const cf = spawn(ejecutable(), ['tunnel', '--no-autoupdate', '--url', `http://localhost:${config.port}`], { stdio: ['ignore', 'pipe', 'pipe'] });
     const cerrar = () => cf.kill();
-    process.on('SIGINT', () => {
-      cerrar();
-      console.log('\nTúnel cerrado.');
-      process.exit(0);
-    });
+    // Ctrl+C o cerrar la ventana: se cierra el túnel y, si hay producción, el número vuelve a Vercel.
+    // Así el número nunca queda apuntando a un túnel muerto (Meta retrasaría los mensajes hasta 20 min o más).
+    for (const senal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+      process.on(senal, () => {
+        cerrar();
+        console.log('\nTúnel cerrado.');
+        volverAProduccion();
+        process.exit(0);
+      });
+    }
     process.on('exit', cerrar);
     let url = '';
     let conectado = false;
@@ -110,3 +135,4 @@ await registrarEnMeta(webhook);
 console.log(`\n✔ Webhook registrado en Meta: ${webhook}`);
 console.log(PRODUCCION ? `  (solo para el número de prueba; la app sigue apuntando a producción: ${PRODUCCION})` : '  (para la app y para el número de prueba)');
 console.log('\nYa puedes escribirle al chatbot desde WhatsApp. Deja esta ventana abierta; Ctrl+C para cerrar el túnel.');
+if (PRODUCCION && !process.env.SGIM_INICIAR) console.log('Al cerrar, el número vuelve solo a producción (Vercel).');

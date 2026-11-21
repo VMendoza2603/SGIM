@@ -25,6 +25,15 @@ import { enSegundoPlano } from './servicios/segundoPlano.js';
 export const app = express();
 
 app.disable('x-powered-by');
+// Cabeceras de seguridad básicas (sin dependencias): evitan que el panel se incruste en otra página (clickjacking),
+// que el navegador "adivine" tipos de archivo y que la URL completa viaje a otros sitios.
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+  next();
+});
 app.use(cors({ origin: config.frontendOrigin }));
 // Se guarda el cuerpo crudo para verificar la firma de los webhooks de Meta
 app.use(express.json({ limit: '8mb', verify: (req, _res, buf) => ((req as express.Request & { rawBody?: Buffer }).rawBody = buf) }));

@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import { useSesion } from './auth';
-import { iniciales, useIntervalo, usePreferencias } from './ui';
+import { iniciales, OPCIONES_A11Y, TAMANOS, useIntervalo, useLecturaVoz, usePreferencias } from './ui';
 
 type Alerta = { codigo: string; titulo: string; nivel: 'bad' | 'warn' | 'info'; motivo: string };
 
@@ -67,7 +67,99 @@ function Campana({ esTecnico }: { esTecnico: boolean }) {
   );
 }
 
-const NOMBRE_TEXTO = { normal: 'normal', grande: 'grande', 'muy-grande': 'muy grande' } as const;
+/** Botón «Accesibilidad» (en el celular, «A+») y su panel de opciones: tamaño de texto, pantalla, voz, contraste, enlaces y espaciado. */
+function Accesibilidad({ prefs }: { prefs: ReturnType<typeof usePreferencias> }) {
+  const { pathname } = useLocation();
+  const [abierto, setAbierto] = useState(false);
+  const caja = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setAbierto(false);
+  }, [pathname]);
+  useEffect(() => {
+    if (!abierto) return;
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && setAbierto(false);
+    const fuera = (e: MouseEvent) => !caja.current?.contains(e.target as Node) && setAbierto(false);
+    window.addEventListener('keydown', tecla);
+    window.addEventListener('mousedown', fuera);
+    return () => {
+      window.removeEventListener('keydown', tecla);
+      window.removeEventListener('mousedown', fuera);
+    };
+  }, [abierto]);
+  const actual = TAMANOS.find((t) => t.id === prefs.texto) ?? TAMANOS[1];
+
+  return (
+    <div className="menu" ref={caja}>
+      <button
+        type="button"
+        className="icono txt"
+        aria-expanded={abierto}
+        aria-label={`Opciones de accesibilidad (tamaño de texto: ${actual.nombre})`}
+        title="Opciones de accesibilidad"
+        onClick={() => setAbierto(!abierto)}
+      >
+        <span className="solo-pc">Accesibilidad</span>
+        <span className="solo-movil">A+</span>
+      </button>
+      {abierto && (
+        <div className="panel-a11y" role="dialog" aria-label="Opciones de accesibilidad">
+          <div className="row between">
+            <h4>Opciones de accesibilidad</h4>
+            <button type="button" className="cerrar" onClick={() => setAbierto(false)} aria-label="Cerrar">✕</button>
+          </div>
+          <div className="small muted"><b>Tamaño de texto</b></div>
+          <div className="tamanos" role="radiogroup" aria-label="Tamaño de texto">
+            {TAMANOS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={prefs.texto === t.id}
+                aria-label={`Texto ${t.nombre}`}
+                className={prefs.texto === t.id ? 'on' : ''}
+                onClick={() => prefs.cambiarTexto(t.id)}
+              >
+                {t.texto}
+              </button>
+            ))}
+          </div>
+          {OPCIONES_A11Y.map((o) => (
+            <label key={o.id} className="opcion" htmlFor={`a11y-${o.id}`}>
+              <span>
+                <b>{o.titulo}</b>
+                {o.ayuda && <span className="small muted" style={{ display: 'block' }}>{o.ayuda}</span>}
+              </span>
+              <input id={`a11y-${o.id}`} type="checkbox" checked={prefs.opciones[o.id]} onChange={(e) => prefs.cambiarOpcion(o.id, e.target.checked)} />
+            </label>
+          ))}
+          <button type="button" className="link small" onClick={prefs.restablecer}>↺ Restablecer valores</button>
+          <div className="small muted">Tus preferencias se guardan en este navegador.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Barra de «Lectura en voz alta» (se muestra cuando la opción está activa). */
+function BarraVoz({ cerrar }: { cerrar: () => void }) {
+  const { soportada, estado, leerTexto, pausar, detener } = useLecturaVoz();
+  return (
+    <div className="barra-voz" role="region" aria-label="Lectura en voz alta">
+      <span className="small"><b>🔊 Lectura en voz alta</b></span>
+      {!soportada ? (
+        <span className="small muted">Tu navegador no permite leer en voz alta.</span>
+      ) : (
+        <>
+          <button type="button" className="btn pri" onClick={leerTexto} title="Lee el texto seleccionado o, si no hay selección, toda la pantalla">▶ Leer</button>
+          <button type="button" className="btn" onClick={pausar} disabled={estado === 'detenida'}>{estado === 'pausada' ? '⏯ Continuar' : '⏸ Pausar'}</button>
+          <button type="button" className="btn" onClick={detener} disabled={estado === 'detenida'}>⏹ Detener</button>
+          <span className="small muted solo-pc">Selecciona un texto para leer solo esa parte.</span>
+        </>
+      )}
+      <button type="button" className="cerrar" onClick={cerrar} aria-label="Ocultar la barra de lectura">✕</button>
+    </div>
+  );
+}
 
 type Item = { ruta: string; texto: string; permiso: string; badge?: 'activos' | 'verificar' };
 type Grupo = { titulo: string; items: Item[] };
@@ -132,7 +224,8 @@ export function Shell() {
   const [contadores, setContadores] = useState<{ activos?: number; verificar?: number }>({});
   const [busqueda, setBusqueda] = useState('');
   const [menuAbierto, setMenuAbierto] = useState(false);
-  const { tema, texto, cambiarTema, cambiarTexto } = usePreferencias();
+  const prefs = usePreferencias();
+  const { tema, cambiarTema } = prefs;
 
   // En pantallas angostas el menú es un panel deslizable: se cierra al navegar
   useEffect(() => {
@@ -207,15 +300,7 @@ export function Shell() {
             />
           </form>
           <div className="me">
-            <button
-              type="button"
-              className="icono txt"
-              onClick={cambiarTexto}
-              aria-label={`Tamaño de letra: ${NOMBRE_TEXTO[texto]}. Cambiar`}
-              title={`Tamaño de letra: ${NOMBRE_TEXTO[texto]} (clic para cambiar)`}
-            >
-              {texto === 'normal' ? 'A+' : texto === 'grande' ? 'A++' : 'A'}
-            </button>
+            <Accesibilidad prefs={prefs} />
             <button
               type="button"
               className="icono"
@@ -239,6 +324,7 @@ export function Shell() {
         <div className="content">
           <Outlet />
         </div>
+        {prefs.opciones.voz && <BarraVoz cerrar={() => prefs.cambiarOpcion('voz', false)} />}
       </div>
     </div>
   );

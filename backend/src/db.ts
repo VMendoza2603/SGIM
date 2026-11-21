@@ -52,3 +52,6 @@ export async function transaccion<T>(ctx: ContextoAuditoria | null, fn: (c: pg.P
     client.release();
   }
 }
+
+/** Escapa % y _ para que se busquen como texto en LIKE/ILIKE (si no, «%» encontraría todo). */
+export const escaparLike = (t: string) => t.replace(/[\\%_]/g, (c) => `\\${c}`);
