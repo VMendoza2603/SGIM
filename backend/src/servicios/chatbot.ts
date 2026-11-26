@@ -361,17 +361,121 @@ async function avanzarReporte(s: Sesion, rep: Contexto, reanalizar = false) {
   return registrarReporte(s, rep);
 }
 
-async function pedirUbicacion(s: Sesion, rep: Contexto) {
+// ---------------------------------------------------------------- Elegir el lugar con listas de WhatsApp
+// WhatsApp admite como máximo 10 filas por lista. Con más de 10 bloques se eligen en dos pasos:
+// primero el grupo (Bloques A – H, I – P…, Otros edificios) y luego el bloque. Dentro de un bloque con más
+// de 10 lugares se elige primero el piso; si un piso tiene más de 10, se muestran por partes («Más lugares»).
+const MAX_FILAS = 10;
+const BLOQUES_POR_GRUPO = 8;
+
+type BloqueLista = { id_bloque: number; codigo: string; nombre: string; lugares: number };
+
+const bloquesActivos = () =>
+  query<BloqueLista>(
+    `SELECT b.id_bloque, b.codigo, b.nombre,
+            (SELECT count(*)::int FROM ubicacion u WHERE u.id_bloque = b.id_bloque AND u.activo) AS lugares
+       FROM bloque b WHERE b.activo ORDER BY (length(b.codigo) = 1) DESC, b.codigo`,
+  );
+
+/** «Bloque H - Laboratorios de Computación» → título «Bloque H» y descripción «Laboratorios de Computación». */
+function partesBloque(b: BloqueLista) {
+  const [titulo, ...resto] = b.nombre.split(' - ');
+  const lugares = `${b.lugares} ${b.lugares === 1 ? 'lugar' : 'lugares'}`;
+  return { titulo, descripcion: resto.length ? `${resto.join(' - ')} · ${lugares}` : `Bloque ${b.codigo} · ${lugares}` };
+}
+
+/** Bloques de una letra en grupos de 8 (A – H, I – P…) y los demás edificios aparte (CRAI, Posgrado…). */
+function gruposDeBloques(bloques: BloqueLista[]) {
+  const trozos = <T,>(arr: T[]) => Array.from({ length: Math.ceil(arr.length / BLOQUES_POR_GRUPO) }, (_, i) => arr.slice(i * BLOQUES_POR_GRUPO, (i + 1) * BLOQUES_POR_GRUPO));
+  const letras = trozos(bloques.filter((b) => b.codigo.length === 1));
+  const otros = trozos(bloques.filter((b) => b.codigo.length > 1));
+  return [
+    ...letras.map((g) => ({
+      titulo: g.length > 1 ? `Bloques ${g[0].codigo} – ${g[g.length - 1].codigo}` : `Bloque ${g[0].codigo}`,
+      descripcion: g.map((b) => b.codigo).join(', '),
+      bloques: g,
+    })),
+    ...otros.map((g, i) => ({
+      titulo: otros.length > 1 ? `Otros edificios ${i + 1}` : 'Otros edificios',
+      descripcion: g.map((b) => partesBloque(b).titulo).join(', '),
+      bloques: g,
+    })),
+  ].slice(0, MAX_FILAS);
+}
+
+const filaBloque = (b: BloqueLista) => ({ id: `rep:bloque:${b.id_bloque}`, ...partesBloque(b) });
+const nombrePiso = (piso: number) => (piso === 1 ? 'Planta baja' : `Piso ${piso}`);
+
+async function pedirUbicacion(s: Sesion, rep: Contexto, volviendo = false) {
   await s.guardar('ESPERANDO_UBICACION', { rep });
-  const bloques = await query(`SELECT id_bloque, codigo, nombre FROM bloque WHERE activo ORDER BY codigo`);
-  // Solo se muestra lo que entendió la IA si está segura (si duda, su título podría ser incorrecto)
-  const seguro = rep.ia?.categoria && rep.ia.esDanio && rep.ia.confianza >= (await parametroNumero('ia.umbral_confianza', 0.7));
+  const bloques = await bloquesActivos();
+  // Solo se muestra lo que entendió la IA si está segura (si duda, su título podría ser incorrecto); no se repite al volver
+  const seguro = !volviendo && rep.ia?.categoria && rep.ia.esDanio && rep.ia.confianza >= (await parametroNumero('ia.umbral_confianza', 0.7));
   const entendi = seguro ? `Entendí: 🏷️ *${rep.ia.categoria}*${rep.ia.titulo ? ` · ${rep.ia.titulo}` : ''}.\n\n` : '';
+  const pregunta = `${entendi}📍 ¿Dónde está el daño?\nEscribe el código del lugar (por ejemplo *B-204*), el código del QR pegado en la puerta o el nombre del lugar, o`;
+  if (bloques.length <= MAX_FILAS) {
+    return s.enviar({ tipo: 'lista', texto: `${pregunta} elige el bloque:`, boton: 'Elegir bloque', filas: bloques.map(filaBloque) });
+  }
   return s.enviar({
     tipo: 'lista',
-    texto: `${entendi}📍 ¿Dónde está el daño?\nEscribe el código del lugar (por ejemplo *B-204*), el código del QR pegado en la puerta, o elige el bloque:`,
+    texto: `${pregunta} elige dónde está el bloque:`,
     boton: 'Elegir bloque',
-    filas: bloques.map((b) => ({ id: `rep:bloque:${b.id_bloque}`, titulo: b.nombre, descripcion: `Bloque ${b.codigo}` })),
+    filas: gruposDeBloques(bloques).map((g, i) => ({ id: `rep:grupo:${i}`, titulo: g.titulo, descripcion: g.descripcion })),
+  });
+}
+
+/** Bloques de un grupo, con una fila para volver a los grupos. */
+async function enviarGrupo(s: Sesion, rep: Contexto, indice: number) {
+  const grupo = gruposDeBloques(await bloquesActivos())[indice];
+  if (!grupo) return pedirUbicacion(s, rep);
+  return s.enviar({
+    tipo: 'lista',
+    texto: `Elige el bloque (${grupo.titulo}):`,
+    boton: 'Elegir bloque',
+    filas: [...grupo.bloques.map(filaBloque), { id: 'rep:grupos', titulo: '⬅️ Ver otros bloques', descripcion: 'Volver a la lista de grupos' }],
+  });
+}
+
+/** Lugares de un bloque: directo si son 10 o menos; si no, primero el piso. */
+async function enviarLugaresDeBloque(s: Sesion, idBloque: number) {
+  const pisos = await query<{ piso: number; total: number }>(
+    `SELECT piso, count(*)::int AS total FROM ubicacion WHERE activo AND id_bloque = $1 GROUP BY piso ORDER BY piso`,
+    [idBloque],
+  );
+  const total = pisos.reduce((n, p) => n + p.total, 0);
+  if (!total) return s.decir('Ese bloque aún no tiene lugares registrados. Escribe el nombre del lugar y coordinación lo revisará.');
+  if (total <= MAX_FILAS || pisos.length === 1) return enviarLugares(s, idBloque, null, 0);
+  return s.enviar({
+    tipo: 'lista',
+    texto: '¿En qué piso está? Si prefieres, escribe el código o el nombre del lugar.',
+    boton: 'Elegir piso',
+    filas: pisos.slice(0, MAX_FILAS).map((p) => ({
+      id: `rep:piso:${idBloque}:${p.piso}:0`,
+      titulo: nombrePiso(p.piso),
+      descripcion: `Piso ${p.piso} · ${p.total} ${p.total === 1 ? 'lugar' : 'lugares'}`,
+    })),
+  });
+}
+
+/** Lugares de un bloque (o de un piso), por partes de 9 con la fila «Más lugares» si no caben. */
+async function enviarLugares(s: Sesion, idBloque: number, piso: number | null, desde: number) {
+  const ubic = await query<{ id_ubicacion: number; codigo: string; nombre: string }>(
+    `SELECT id_ubicacion, codigo, nombre FROM ubicacion
+      WHERE activo AND id_bloque = $1 AND ($2::int IS NULL OR piso = $2) ORDER BY codigo OFFSET $3 LIMIT ${MAX_FILAS + 1}`,
+    [idBloque, piso, desde],
+  );
+  if (!ubic.length) return s.decir('No encontré más lugares. Escribe el código o el nombre del lugar.');
+  const hayMas = ubic.length > MAX_FILAS;
+  const visibles = hayMas ? ubic.slice(0, MAX_FILAS - 1) : ubic;
+  const filas = visibles.map((u) => ({ id: `rep:ubic:${u.id_ubicacion}`, titulo: u.codigo, descripcion: u.nombre }));
+  if (hayMas) {
+    filas.push({ id: `rep:piso:${idBloque}:${piso ?? 'todos'}:${desde + visibles.length}`, titulo: '➡️ Más lugares', descripcion: 'Ver los siguientes lugares' });
+  }
+  return s.enviar({
+    tipo: 'lista',
+    texto: `Elige el lugar${piso ? ` (${nombrePiso(piso).toLowerCase()})` : ''}. Si no aparece en la lista, escribe su código o su nombre.`,
+    boton: 'Elegir lugar',
+    filas,
   });
 }
 
@@ -393,18 +497,12 @@ const esRepetido = (rep: Contexto, texto: string) =>
 async function pasoUbicacion(s: Sesion, m: Entrante) {
   const rep = { ...s.ctx.rep };
   const id = m.idRespuesta ?? '';
-  if (id.startsWith('rep:bloque:')) {
-    const ubic = await query(
-      `SELECT id_ubicacion, codigo, nombre FROM ubicacion WHERE activo AND id_bloque = $1 ORDER BY codigo LIMIT 10`,
-      [Number(id.split(':')[2])],
-    );
-    if (!ubic.length) return s.decir('Ese bloque aún no tiene lugares registrados. Escribe el nombre del lugar y coordinación lo revisará.');
-    return s.enviar({
-      tipo: 'lista',
-      texto: 'Elige el lugar. Si no aparece en la lista, escribe su código o su nombre.',
-      boton: 'Elegir lugar',
-      filas: ubic.map((u) => ({ id: `rep:ubic:${u.id_ubicacion}`, titulo: u.codigo, descripcion: u.nombre })),
-    });
+  if (id === 'rep:grupos') return pedirUbicacion(s, rep, true);
+  if (id.startsWith('rep:grupo:')) return enviarGrupo(s, rep, Number(id.split(':')[2]));
+  if (id.startsWith('rep:bloque:')) return enviarLugaresDeBloque(s, Number(id.split(':')[2]));
+  if (id.startsWith('rep:piso:')) {
+    const [, , bloque, piso, desde] = id.split(':');
+    return enviarLugares(s, Number(bloque), piso === 'todos' ? null : Number(piso), Number(desde) || 0);
   }
   if (id.startsWith('rep:ubic:')) {
     const u = await queryOne(`SELECT id_ubicacion, codigo, nombre FROM ubicacion WHERE id_ubicacion = $1`, [Number(id.split(':')[2])]);

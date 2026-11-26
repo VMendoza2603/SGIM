@@ -34,6 +34,9 @@ const leerArchivo = (f: File) =>
     r.readAsDataURL(f);
   });
 
+/** Celular o tableta (pantalla táctil): ahí se ofrece abrir la cámara directamente. En la computadora solo se elige un archivo. */
+const esTactil = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
 /** T02 · Atender incidente (técnico) */
 export function Atender() {
   const { codigo } = useParams();
@@ -45,6 +48,7 @@ export function Atender() {
   const [materiales, setMateriales] = useState('');
   const [tipoFoto, setTipoFoto] = useState<'AVANCE' | 'CIERRE'>('CIERRE');
   const archivo = useRef<HTMLInputElement>(null);
+  const camara = useRef<HTMLInputElement>(null);
 
   const cargar = useCallback(() => {
     api(`/incidentes/${codigo}`).then(setInc).catch((e) => setError(e.message));
@@ -77,6 +81,7 @@ export function Atender() {
       }
     }, `Foto${files.length > 1 ? 's' : ''} de ${tipoFoto === 'CIERRE' ? 'cierre' : 'avance'} subida${files.length > 1 ? 's' : ''}.`);
     if (archivo.current) archivo.current.value = '';
+    if (camara.current) camara.current.value = '';
   };
 
   const guardarAccion = () =>
@@ -158,13 +163,20 @@ export function Atender() {
                 </div>
                 <div className="field">
                   <label htmlFor="ac-foto">Fotos</label>
-                  <div className="row">
+                  <div className="row" style={{ flexWrap: 'wrap' }}>
                     <select id="ac-foto-tipo" className="input" style={{ width: 110 }} value={tipoFoto} onChange={(e) => setTipoFoto(e.target.value as 'AVANCE' | 'CIERRE')} aria-label="Tipo de foto">
                       <option value="CIERRE">Cierre</option>
                       <option value="AVANCE">Avance</option>
                     </select>
-                    <button className="btn" style={{ flex: 1, justifyContent: 'center' }} onClick={() => archivo.current?.click()}>📷 Subir avance / cierre</button>
+                    {/* En el celular: tomar la foto en el momento (abre la cámara trasera) o elegir una ya tomada */}
+                    {esTactil && (
+                      <button type="button" className="btn" style={{ flex: '1 1 130px', justifyContent: 'center' }} onClick={() => camara.current?.click()}>📷 Tomar foto</button>
+                    )}
+                    <button type="button" className="btn" style={{ flex: '1 1 130px', justifyContent: 'center' }} onClick={() => archivo.current?.click()}>
+                      {esTactil ? '🖼️ Elegir de galería' : '📷 Subir avance / cierre'}
+                    </button>
                     <input id="ac-foto" ref={archivo} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => subirFotos(e.target.files)} />
+                    <input id="ac-camara" ref={camara} type="file" accept="image/*" capture="environment" hidden aria-label="Tomar foto con la cámara" onChange={(e) => subirFotos(e.target.files)} />
                   </div>
                 </div>
               </div>

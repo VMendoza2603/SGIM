@@ -10,6 +10,32 @@ const gestionaUbic = requierePermiso('ubicacion.gestionar');
 const gestionaEq = requierePermiso('equipo.gestionar');
 
 // ================================================================ A06 · Ubicaciones
+/** Mapa del campus: incidentes por bloque en el periodo, para colorear cada edificio del plano. */
+infraestructuraRouter.get(
+  '/mapa',
+  gestionaUbic,
+  ruta(async (req, res) => {
+    const { dias } = z.object({ dias: z.coerce.number().int().min(1).max(730).default(90) }).parse(req.query);
+    res.json(
+      await query(
+        `SELECT b.id_bloque, b.codigo, b.nombre, b.activo,
+                (SELECT count(*)::int FROM ubicacion u WHERE u.id_bloque = b.id_bloque) AS ubicaciones,
+                count(i.id_incidente)::int AS total,
+                count(i.id_incidente) FILTER (WHERE NOT e.es_final)::int AS activos,
+                count(i.id_incidente) FILTER (WHERE p.codigo = 'ALTA' AND NOT e.es_final)::int AS altas
+           FROM bloque b
+           LEFT JOIN ubicacion u ON u.id_bloque = b.id_bloque
+           LEFT JOIN incidente i ON i.id_ubicacion = u.id_ubicacion AND i.fecha_reporte >= now() - make_interval(days => $1)
+                                AND i.id_estado <> (SELECT id_estado FROM estado_incidente WHERE codigo = 'CANCELADO')
+           LEFT JOIN estado_incidente e ON e.id_estado = i.id_estado
+           LEFT JOIN prioridad p ON p.id_prioridad = i.id_prioridad
+          GROUP BY b.id_bloque ORDER BY b.codigo`,
+        [dias],
+      ),
+    );
+  }),
+);
+
 /**
  * Lugares (aulas, laboratorios, baños…) con más incidentes en el periodo, para saber qué curso o espacio
  * tiene más problemas y planificar mantenimiento preventivo. No cuenta los incidentes cancelados.

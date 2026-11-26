@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
+import { MapaCampus } from './MapaCampus';
 import { Campo, Cargando, Dialogo, ErrorBox, fechaCorta, Interruptor, useAccion, useCarga } from '../ui';
 
 type Formulario = { tipo: 'sede' | 'bloque' | 'ubicacion'; datos: any } | null;
@@ -89,7 +90,9 @@ export function Ubicaciones() {
   if (!datos) return <Cargando />;
 
   const bloqueSel = bloque ?? datos.bloques[0]?.id_bloque ?? null;
-  const filas = datos.ubicaciones.filter((u: any) => u.id_bloque === bloqueSel);
+  // Ordenadas por piso y código (con muchos espacios por bloque se leen piso por piso)
+  const filas = datos.ubicaciones.filter((u: any) => u.id_bloque === bloqueSel).sort((a: any, b: any) => a.piso - b.piso || a.codigo.localeCompare(b.codigo, "es", { numeric: true }));
+  const bloqueActual = datos.bloques.find((b: any) => b.id_bloque === bloqueSel);
   const set = (campo: string, valor: unknown) => setForm((f) => f && { ...f, datos: { ...f.datos, [campo]: valor } });
 
   const guardar = async (e: FormEvent) => {
@@ -128,8 +131,9 @@ export function Ubicaciones() {
         </button>
       </div>
       <Aviso />
-      <div className="grid g-aside">
-        <div className="card stack-sm">
+      {/* Estructura · tabla del bloque · mapa del campus UNEMI */}
+      <div className="ubic-layout">
+        <div className="card stack-sm ubic-estructura">
           <h4>Estructura</h4>
           <div className="tree">
             {datos.sedes.map((s: any) => (
@@ -154,30 +158,42 @@ export function Ubicaciones() {
             <button className="btn" disabled={!datos.sedes.length} onClick={() => setForm({ tipo: 'bloque', datos: { id_sede: datos.sedes[0]?.id_sede, pisos: 1 } })}>+ Bloque</button>
           </div>
         </div>
-        <div className="card p0 wrap-x">
-          <table className="t">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Piso</th><th>Equipos</th><th>QR</th><th>Activo</th><th /></tr></thead>
-            <tbody>
-              {filas.map((u: any) => (
-                <tr key={u.id_ubicacion} style={{ opacity: u.activo ? 1 : 0.55 }}>
-                  <td className="mono">{u.codigo}</td>
-                  <td>{u.nombre}</td>
-                  <td>{u.tipo}</td>
-                  <td>{u.piso}</td>
-                  <td>{u.equipos}</td>
-                  <td className="mono">{u.codigo_qr ?? '—'}</td>
-                  <td><Interruptor activo={u.activo} etiqueta={u.activo ? 'Desactivar ubicación' : 'Activar ubicación'} onCambio={(v) => cambiarActivo(u, v)} /></td>
-                  <td><button className="btn ghost" onClick={() => setForm({ tipo: 'ubicacion', datos: { ...u } })}>Editar</button></td>
-                </tr>
-              ))}
-              {filas.length === 0 && <tr><td colSpan={8} className="empty">Este bloque aún no tiene ubicaciones.</td></tr>}
-            </tbody>
-          </table>
+        <div className="stack-sm ubic-tabla">
+          {bloqueActual && (
+            <div className="row between">
+              <h4>{bloqueActual.nombre}</h4>
+              <span className="small muted">
+                {bloqueActual.pisos} {bloqueActual.pisos === 1 ? 'piso' : 'pisos'} · {filas.length} {filas.length === 1 ? 'ubicación' : 'ubicaciones'}
+              </span>
+            </div>
+          )}
+          <div className="card p0 wrap-x">
+            <table className="t">
+              <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Piso</th><th>Equipos</th><th>QR</th><th>Activo</th><th /></tr></thead>
+              <tbody>
+                {filas.map((u: any) => (
+                  <tr key={u.id_ubicacion} style={{ opacity: u.activo ? 1 : 0.55 }}>
+                    <td className="mono">{u.codigo}</td>
+                    <td>{u.nombre}</td>
+                    <td>{u.tipo}</td>
+                    <td>{u.piso}</td>
+                    <td>{u.equipos}</td>
+                    <td className="mono">{u.codigo_qr ?? '—'}</td>
+                    <td><Interruptor activo={u.activo} etiqueta={u.activo ? 'Desactivar ubicación' : 'Activar ubicación'} onCambio={(v) => cambiarActivo(u, v)} /></td>
+                    <td><button className="btn ghost" onClick={() => setForm({ tipo: 'ubicacion', datos: { ...u } })}>Editar</button></td>
+                  </tr>
+                ))}
+                {filas.length === 0 && <tr><td colSpan={8} className="empty">Este bloque aún no tiene ubicaciones.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="small muted">Una ubicación con incidentes no se elimina: se desactiva para conservar su historial.</div>
+        </div>
+        <MapaCampus seleccionado={bloqueSel} onElegir={(id) => setBloque(id)} />
+        <div className="ubic-lugares">
+          <LugaresConMasProblemas />
         </div>
       </div>
-      <div className="small muted">Una ubicación con incidentes no se elimina: se desactiva para conservar su historial.</div>
-
-      <LugaresConMasProblemas />
 
       {form && (
         <Dialogo
